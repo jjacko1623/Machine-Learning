@@ -1,0 +1,108 @@
+---
+title: "Machine Learning Final Assignment"
+author: "James Jackson"
+date: "December 14, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## The Problem and Background
+Required to fit a model to the data provided by the generous people at  http://groupware.les.inf.puc-rio.br/har and to assess the suitablility of the model.  Subsequent to this is to apply our chosen model to a series of questions.  The context of the data is that various measurements of candidates whilst undergoing exercise were taken and an assessment of the form errors during exercise that occured were made.  We are trying to determine the class of form error based on the measurements.
+
+## Loading, Exploring and Cleaning the Data
+We begin by loading the training data.  We will split the training data into a validation set as well as a training set to build and test our model.  (We will reserve the testing data entirely for the quiz component).
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+setwd("C:/Users/Sophy/Desktop/JJ Coursera/Machine Learning")
+rawDataTrain <- read.csv("./pml-training.csv",header=TRUE,na.strings=c("","NA"))
+
+library(caret)
+inTrain <- createDataPartition(y=rawDataTrain$classe, p=0.75, list=FALSE)
+dataTrain <- rawDataTrain[inTrain,]
+dataValidation <- rawDataTrain[-inTrain,]
+```
+
+Upon exploring the data we see there are several columns with a large amount of NA values.  We will strip these from the dataset for model building.  We need to be careful to apply the same transformations to the validation data set as well.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+colswNAs <- apply(dataTrain,2,function(x) sum(is.na(x)))
+names(colswNAs) <- NULL
+colswNAs <- as.character(colswNAs)
+colswNAsT <- gsub("0",TRUE,colswNAs)
+colswNAsTF <- gsub(max(colswNAs),FALSE,colswNAsT)
+colsIndex <- as.logical(colswNAsTF)
+
+trimDataTrain <- dataTrain[,colsIndex]
+```
+
+Next is to analyse the data and see that some of the columns relate to indexes or a timestamp that will have no relation to predicting the classe result.  We see that several of the first columns will not be needed.  In addition, the user_name could be used for predicting more easily if it were quantified.  We have assigned numerical values to each of the six candidates.  For the models I've shown here (three of them) none of them require the classe variable to be numeric, so we can leave this as a factor.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+tidyDataTrain <- trimDataTrain[,-c(1,3,4,5,6,7)]
+tidyDataTrain$user_name <- sapply(tidyDataTrain$user_name, 
+                                function(x) as.numeric(x))
+
+#now apply same methodology to validation data set
+trimDataValidation <- dataValidation[,colsIndex]
+tidyDataValidation <- trimDataValidation[,-c(1,3,4,5,6,7)]
+tidyDataValidation$user_name <- sapply(tidyDataValidation$user_name, 
+                                  function(x) as.numeric(x))
+```
+
+## Building a Model
+To ensure reproducibility we will set the random seed generator.  In this case we will fit 3 models: random forest, recursive partioning and support vector machine approaches.  Each require their own packages.  
+
+```{r echo=TRUE, cache=TRUE, message=FALSE, warning=FALSE}
+library(randomForest)
+mod3RF <- randomForest(classe ~ ., data = tidyDataTrain)
+
+premod3 <- predict(mod3RF, newdata = tidyDataValidation, type = "class")
+confMat3 <- confusionMatrix(premod3, tidyDataValidation$classe)
+
+library(rpart)
+library(rpart.plot)
+library(rattle)
+mod8RPART <- rpart(classe ~ ., data = tidyDataTrain, method = "class")
+
+premod8 <- predict(mod8RPART, newdata = tidyDataValidation, type = "class")
+confMat8 <- confusionMatrix(premod8, tidyDataValidation$classe)
+
+library(e1071)
+mod9SVM <- svm(classe ~ ., data = tidyDataTrain)
+
+premod9 <- predict(mod9SVM, newdata = tidyDataValidation, type = "class")
+confMat9 <- confusionMatrix(premod9, tidyDataValidation$classe)
+```
+
+With each of the models above we have used the training data to calibrate the model and then we make predictions based on the validation data, as seen above.
+
+## Results
+Using the models and the validation data we can determine the accuracy of the model.  The table below demonstrates that the Random Forest model displays superior predicting accuracy.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+accTable <- cbind(round(confMat3$overall[1],3), 
+                    round(confMat8$overall[1],3), 
+                    round(confMat9$overall[1],3))
+
+colnames(accTable) <- c("RF", "RPart", "SVM")
+print(accTable)
+```
+
+Due to the supreme predicting power of the random forest model we will include a plot of the resulting forest and the output of the prediction matrix.  Apologies the random forest plot is not readable at all branch levels.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+confMat3$table
+library(tree)
+plotTree <- tree(mod3RF,data = tidyDataTrain)
+plot(plotTree)
+text(plotTree)
+```
+
+The confusion matrix shows the out-of-sample errors associated with the random forest method.  As expected, given the accuracy of `r round(confMat3$overall[1],3)*100`% we see the confusion matrix the diagonally dominant.  
+
+## Conclusion
+Not only looking at the accuracy but also interpretability, computation time and the confidence intervals of the accuracy, we conclude that the random forest model is our best model.  We will use _mod3RF_ to tackle the quiz.
+
