@@ -13,11 +13,13 @@ knitr::opts_chunk$set(echo = TRUE)
 Required to fit a model to the data provided by the generous people at  http://groupware.les.inf.puc-rio.br/har and to assess the suitablility of the model.  Subsequent to this is to apply our chosen model to a series of questions.  The context of the data is that various measurements of candidates whilst undergoing exercise were taken and an assessment of the form errors during exercise that occured were made.  We are trying to determine the class of form error based on the measurements.
 
 ## Loading, Exploring and Cleaning the Data
-We begin by loading the training data.  We will split the training data into a validation set as well as a training set to build and test our model.  (We will reserve the testing data entirely for the quiz component).
+### Incorporating cross validation
+We begin by loading the training data.  We will split the training data into a validation set as well as a training set to build and test our model.  We will reserve the testing data for making a prediction at the end.
 
 ```{r echo=TRUE, message=FALSE, warning=FALSE}
 setwd("C:/Users/Sophy/Desktop/JJ Coursera/Machine Learning")
 rawDataTrain <- read.csv("./pml-training.csv",header=TRUE,na.strings=c("","NA"))
+dataTest <- read.csv("./pml-testing.csv",header=TRUE,na.strings=c("","NA"))
 
 library(caret)
 inTrain <- createDataPartition(y=rawDataTrain$classe, p=0.75, list=FALSE)
@@ -56,6 +58,7 @@ tidyDataValidation$user_name <- sapply(tidyDataValidation$user_name,
 To ensure reproducibility we will set the random seed generator.  In this case we will fit 3 models: random forest, recursive partioning and support vector machine approaches.  Each require their own packages.  
 
 ```{r echo=TRUE, cache=TRUE, message=FALSE, warning=FALSE}
+set.seed(128)
 library(randomForest)
 mod3RF <- randomForest(classe ~ ., data = tidyDataTrain)
 
@@ -77,10 +80,10 @@ premod9 <- predict(mod9SVM, newdata = tidyDataValidation, type = "class")
 confMat9 <- confusionMatrix(premod9, tidyDataValidation$classe)
 ```
 
-With each of the models above we have used the training data to calibrate the model and then we make predictions based on the validation data, as seen above.
+With each of the models above we have used the training data to calibrate the model and then we make predictions based on the validation data (which is a subset of the original traning data), as seen above.
 
 ## Results
-Using the models and the validation data we can determine the accuracy of the model.  The table below demonstrates that the Random Forest model displays superior predicting accuracy.
+Using the models and the validation data we can estimate the accuracy of the model.  The table below demonstrates that the Random Forest model displays superior predicting accuracy.
 
 ```{r echo=TRUE, message=FALSE, warning=FALSE}
 accTable <- cbind(round(confMat3$overall[1],3), 
@@ -91,7 +94,7 @@ colnames(accTable) <- c("RF", "RPart", "SVM")
 print(accTable)
 ```
 
-Due to the supreme predicting power of the random forest model we will include a plot of the resulting forest and the output of the prediction matrix.  Apologies the random forest plot is not readable at all branch levels.
+Due to the supreme predicting power of the random forest model we will include a plot of the resulting "forest" and the output of the prediction matrix.  Apologies the random forest plot is not readable at all branch levels.
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 confMat3$table
@@ -101,8 +104,32 @@ plot(plotTree)
 text(plotTree)
 ```
 
-The confusion matrix shows the out-of-sample errors associated with the random forest method.  As expected, given the accuracy of `r round(confMat3$overall[1],3)*100`% we see the confusion matrix the diagonally dominant.  
+#### Sample error
+The confusion matrix shows the out-of-sample errors associated with the random forest method.  As expected, given the accuracy of `r round(confMat3$overall[1],3)*100`% we see the confusion matrix the diagonally dominant.  Thus our out of sample error is `r (1-round(confMat3$overall[1],3))*100`%.
 
-## Conclusion
-Not only looking at the accuracy but also interpretability, computation time and the confidence intervals of the accuracy, we conclude that the random forest model is our best model.  We will use _mod3RF_ to tackle the quiz.
+### Retraining
 
+We now retrain the model using all the training data i.e. combining training and validation data once more.  We apply the same filtering process as before to retrain the random forest model.
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+library(randomForest)
+trimFullDataTrain <- rawDataTrain[,colsIndex]
+tidyFullDataTrain <- trimFullDataTrain[,-c(1,3,4,5,6,7)]
+tidyFullDataTrain$user_name <- sapply(tidyFullDataTrain$user_name, 
+                                      function(x) as.numeric(x))
+modretrainRF <- randomForest(classe ~ ., data = tidyFullDataTrain)
+```
+
+We can now use the retrained model to make a prediction using the test data.  Once again the test data must have the same filters and formatting applied as previously.
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+trimDataTest <- dataTest[,colsIndex]
+tidyDataTest <- trimDataTest[,-c(1,3,4,5,6,7,60)]
+tidyDataTest$user_name <- sapply(tidyDataTest$user_name, 
+                                       function(x) as.numeric(x))
+```
+
+## Conclusion and Prediction
+Not only looking at the accuracy but also interpretability, computation time and the confidence interval of the accuracy, we conclude that the random forest model is our best model.  We will use _modretrainRF_ to tackle the quiz.  To finish off let's make a prediction using the test data.
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+library(caret)
+predict(modretrainRF, newdata = tidyDataTest)
+```
